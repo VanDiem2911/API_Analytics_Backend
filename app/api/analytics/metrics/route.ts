@@ -8,6 +8,8 @@ import { Heartbeat } from "@/lib/models/Heartbeat";
 import { success, error, handleError, getDateRange } from "@/lib/helpers";
 import { requireAuth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 async function resolveFilters(
   websiteId: string,
   searchParams: URLSearchParams,
@@ -74,6 +76,7 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get("period") || "30days";
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;
+    const timezone = searchParams.get("timezone") || "Asia/Ho_Chi_Minh";
 
     if (!websiteId) return error("websiteId là bắt buộc");
 
@@ -81,6 +84,7 @@ export async function GET(request: NextRequest) {
     const { start, end, prevStart, prevEnd } = getDateRange(period, {
       startDate,
       endDate,
+      timezone,
     });
 
     // Resolve filters for both current and previous ranges

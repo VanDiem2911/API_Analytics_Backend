@@ -7,6 +7,8 @@ import { Visitor } from "@/lib/models/Visitor";
 import { success, error, handleError, getDateRange } from "@/lib/helpers";
 import { requireAuth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 async function resolveFilters(
   websiteId: string,
   searchParams: URLSearchParams,
@@ -73,10 +75,11 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get("period") || "30days";
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;
+    const timezone = searchParams.get("timezone") || "Asia/Ho_Chi_Minh";
 
     if (!websiteId) return error("websiteId là bắt buộc");
 
-    const { start, end } = getDateRange(period, { startDate, endDate });
+    const { start, end } = getDateRange(period, { startDate, endDate, timezone });
     const currentFilters = await resolveFilters(websiteId, searchParams, start, end);
 
     // 1. Fetch active visitors during the timeframe to join visitor metadata

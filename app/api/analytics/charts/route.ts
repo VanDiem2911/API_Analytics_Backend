@@ -7,6 +7,8 @@ import { Visitor } from "@/lib/models/Visitor";
 import { success, error, handleError, getDateRange } from "@/lib/helpers";
 import { requireAuth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 async function resolveFilters(
   websiteId: string,
   searchParams: URLSearchParams,
@@ -63,6 +65,59 @@ async function resolveFilters(
   return { pageViewFilter, sessionFilter };
 }
 
+function formatInTimeZone(date: Date, tz: string, formatStr: "hour" | "day"): { key: string; display: string } {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const partMap: any = {};
+    parts.forEach(p => {
+      partMap[p.type] = p.value;
+    });
+
+    const year = partMap.year;
+    const month = partMap.month;
+    const day = partMap.day;
+    let hour = partMap.hour === "24" ? "00" : partMap.hour;
+    hour = String(hour).padStart(2, "0");
+
+    if (formatStr === "hour") {
+      return {
+        key: `${year}-${month}-${day} ${hour}:00`,
+        display: `${hour}:00`,
+      };
+    } else {
+      return {
+        key: `${year}-${month}-${day}`,
+        display: `${day}/${month}`,
+      };
+    }
+  } catch (e) {
+    const temp = new Date(date.getTime() + 7 * 3600000); // fallback UTC+7
+    const year = temp.getUTCFullYear();
+    const month = String(temp.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(temp.getUTCDate()).padStart(2, "0");
+    const hour = String(temp.getUTCHours()).padStart(2, "0");
+    if (formatStr === "hour") {
+      return {
+        key: `${year}-${month}-${day} ${hour}:00`,
+        display: `${hour}:00`,
+      };
+    } else {
+      return {
+        key: `${year}-${month}-${day}`,
+        display: `${day}/${month}`,
+      };
+    }
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth(request);
@@ -73,10 +128,11 @@ export async function GET(request: NextRequest) {
     const period = searchParams.get("period") || "30days";
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;
+    const timezone = searchParams.get("timezone") || "Asia/Ho_Chi_Minh";
 
     if (!websiteId) return error("websiteId là bắt buộc");
 
-    const { start, end } = getDateRange(period, { startDate, endDate });
+    const { start, end } = getDateRange(period, { startDate, endDate, timezone });
     const currentFilters = await resolveFilters(websiteId, searchParams, start, end);
 
     // Determine grouping step
@@ -91,8 +147,8 @@ export async function GET(request: NextRequest) {
         $group: {
           _id:
             groupBy === "hour"
-              ? { $dateToString: { format: "%Y-%m-%d %H:00", date: "$timestamp" } }
-              : { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
+              ? { $dateToString: { format: "%Y-%m-%d %H:00", date: "$timestamp", timezone } }
+              : { $dateToString: { format: "%Y-%m-%d", date: "$timestamp", timezone } },
           pageViews: { $sum: 1 },
           visitors: { $addToSet: "$visitorId" },
         },
@@ -106,8 +162,8 @@ export async function GET(request: NextRequest) {
         $group: {
           _id:
             groupBy === "hour"
-              ? { $dateToString: { format: "%Y-%m-%d %H:00", date: "$startedAt" } }
-              : { $dateToString: { format: "%Y-%m-%d", date: "$startedAt" } },
+              ? { $dateToString: { format: "%Y-%m-%d %H:00", date: "$startedAt", timezone } }
+              : { $dateToString: { format: "%Y-%m-%d", date: "$startedAt", timezone } },
           sessions: { $sum: 1 },
         },
       },
@@ -138,18 +194,13 @@ export async function GET(request: NextRequest) {
     const temp = new Date(start);
     if (groupBy === "hour") {
       while (temp <= end) {
-        const year = temp.getFullYear();
-        const month = String(temp.getMonth() + 1).padStart(2, "0");
-        const date = String(temp.getDate()).padStart(2, "0");
-        const hour = String(temp.getHours()).padStart(2, "0");
-        const key = `${year}-${month}-${date} ${hour}:00`;
-        const displayLabel = `${hour}:00`;
+        const { key, display } = formatInTimeZone(temp, timezone, "hour");
 
         const pv = pvMap.get(key) || { pageViews: 0, visitors: 0 };
         const sessions = sessMap.get(key) || 0;
 
         result.push({
-          label: displayLabel,
+          label: display,
           pageViews: pv.pageViews,
           visitors: pv.visitors,
           sessions,
@@ -159,19 +210,13 @@ export async function GET(request: NextRequest) {
       }
     } else {
       while (temp <= end) {
-        const year = temp.getFullYear();
-        const month = String(temp.getMonth() + 1).padStart(2, "0");
-        const date = String(temp.getDate()).padStart(2, "0");
-        const key = `${year}-${month}-${date}`;
-        
-        // Human readable display label, e.g. "Jul 08" or "08/07"
-        const displayLabel = `${date}/${month}`;
+        const { key, display } = formatInTimeZone(temp, timezone, "day");
 
         const pv = pvMap.get(key) || { pageViews: 0, visitors: 0 };
         const sessions = sessMap.get(key) || 0;
 
         result.push({
-          label: displayLabel,
+          label: display,
           pageViews: pv.pageViews,
           visitors: pv.visitors,
           sessions,

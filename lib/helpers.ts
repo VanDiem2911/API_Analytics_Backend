@@ -35,48 +35,59 @@ export interface DateRangeResult {
 
 export function getDateRange(
   period: string,
-  options?: { startDate?: string; endDate?: string }
+  options?: { startDate?: string; endDate?: string; timezone?: string }
 ): DateRangeResult {
-  const now = new Date();
+  const timeZone = options?.timezone || "Asia/Ho_Chi_Minh";
   
-  let start = new Date(now);
-  let end = new Date(now);
-  
-  let prevStart = new Date(now);
-  let prevEnd = new Date(now);
+  // Calculate offset in minutes for target timezone
+  let offsetMinutes = 420; // default to +7 hours for Asia/Ho_Chi_Minh
+  try {
+    const date = new Date();
+    const utcFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric", hour12: false });
+    const tzFormat = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric", hour12: false });
+    const utcDate = new Date(utcFormat.format(date));
+    const tzDate = new Date(tzFormat.format(date));
+    offsetMinutes = Math.round((tzDate.getTime() - utcDate.getTime()) / 60000);
+  } catch (e) {
+    offsetMinutes = 420;
+  }
 
-  // Set start to beginning of day, end to end of day
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+  const nowUTC = Date.now();
+  // Construct a Date object representing the time IN the target timezone
+  const tzNow = new Date(nowUTC + offsetMinutes * 60000);
+  
+  let start = new Date(tzNow);
+  let end = new Date(tzNow);
+  
+  let prevStart = new Date(tzNow);
+  let prevEnd = new Date(tzNow);
+
+  // Set start and end bounds in target timezone
+  start.setUTCHours(0, 0, 0, 0);
+  end.setUTCHours(23, 59, 59, 999);
 
   switch (period) {
     case "today": {
-      // Current: Today
-      // Previous: Yesterday
-      prevStart.setDate(start.getDate() - 1);
-      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setUTCDate(start.getUTCDate() - 1);
+      prevStart.setUTCHours(0, 0, 0, 0);
       
-      prevEnd.setDate(end.getDate() - 1);
-      prevEnd.setHours(23, 59, 59, 999);
+      prevEnd.setUTCDate(end.getUTCDate() - 1);
+      prevEnd.setUTCHours(23, 59, 59, 999);
       break;
     }
     case "yesterday": {
-      // Current: Yesterday
-      // Previous: Day before yesterday
-      start.setDate(start.getDate() - 1);
-      end.setDate(end.getDate() - 1);
+      start.setUTCDate(start.getUTCDate() - 1);
+      end.setUTCDate(end.getUTCDate() - 1);
       
-      prevStart.setDate(start.getDate() - 1);
-      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setUTCDate(start.getUTCDate() - 1);
+      prevStart.setUTCHours(0, 0, 0, 0);
       
-      prevEnd.setDate(end.getDate() - 1);
-      prevEnd.setHours(23, 59, 59, 999);
+      prevEnd.setUTCDate(end.getUTCDate() - 1);
+      prevEnd.setUTCHours(23, 59, 59, 999);
       break;
     }
     case "7days": {
-      // Current: Last 7 Days
-      // Previous: 7 Days before that
-      start.setDate(start.getDate() - 6); // 7 days including today
+      start.setUTCDate(start.getUTCDate() - 6);
       
       const dayLength = 7 * 24 * 60 * 60 * 1000;
       prevStart.setTime(start.getTime() - dayLength);
@@ -84,9 +95,7 @@ export function getDateRange(
       break;
     }
     case "30days": {
-      // Current: Last 30 Days
-      // Previous: 30 Days before that
-      start.setDate(start.getDate() - 29);
+      start.setUTCDate(start.getUTCDate() - 29);
       
       const dayLength = 30 * 24 * 60 * 60 * 1000;
       prevStart.setTime(start.getTime() - dayLength);
@@ -94,56 +103,48 @@ export function getDateRange(
       break;
     }
     case "month": {
-      // Current: This Month (from 1st of month to now/end of month)
-      start.setDate(1);
+      start.setUTCDate(1);
       
-      // Previous: Last Month
-      prevStart.setMonth(start.getMonth() - 1);
-      prevStart.setDate(1);
-      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setUTCMonth(start.getUTCMonth() - 1);
+      prevStart.setUTCDate(1);
+      prevStart.setUTCHours(0, 0, 0, 0);
       
-      prevEnd.setTime(start.getTime() - 1); // Last millisecond of previous month
+      prevEnd.setTime(start.getTime() - 1);
       break;
     }
     case "prev_month": {
-      // Current: Last Month
-      start.setMonth(start.getMonth() - 1);
-      start.setDate(1);
+      start.setUTCMonth(start.getUTCMonth() - 1);
+      start.setUTCDate(1);
       
-      end.setDate(0); // Day 0 of this month is last day of previous month
+      end.setUTCDate(0);
       
-      // Previous: Month before last month
-      prevStart.setMonth(start.getMonth() - 1);
-      prevStart.setDate(1);
-      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setUTCMonth(start.getUTCMonth() - 1);
+      prevStart.setUTCDate(1);
+      prevStart.setUTCHours(0, 0, 0, 0);
       
       prevEnd.setTime(start.getTime() - 1);
       break;
     }
     case "year": {
-      // Current: This Year
-      start.setMonth(0, 1);
+      start.setUTCMonth(0, 1);
       
-      // Previous: Last Year
-      prevStart.setFullYear(start.getFullYear() - 1);
-      prevStart.setMonth(0, 1);
-      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setUTCFullYear(start.getUTCFullYear() - 1);
+      prevStart.setUTCMonth(0, 1);
+      prevStart.setUTCHours(0, 0, 0, 0);
       
       prevEnd.setTime(start.getTime() - 1);
       break;
     }
     case "prev_year": {
-      // Current: Last Year
-      start.setFullYear(start.getFullYear() - 1);
-      start.setMonth(0, 1);
+      start.setUTCFullYear(start.getUTCFullYear() - 1);
+      start.setUTCMonth(0, 1);
       
-      end.setFullYear(end.getFullYear() - 1);
-      end.setMonth(11, 31);
+      end.setUTCFullYear(end.getUTCFullYear() - 1);
+      end.setUTCMonth(11, 31);
       
-      // Previous: Year before last year
-      prevStart.setFullYear(start.getFullYear() - 1);
-      prevStart.setMonth(0, 1);
-      prevStart.setHours(0, 0, 0, 0);
+      prevStart.setUTCFullYear(start.getUTCFullYear() - 1);
+      prevStart.setUTCMonth(0, 1);
+      prevStart.setUTCHours(0, 0, 0, 0);
       
       prevEnd.setTime(start.getTime() - 1);
       break;
@@ -151,17 +152,16 @@ export function getDateRange(
     case "custom": {
       if (options?.startDate && options?.endDate) {
         start = new Date(options.startDate);
-        start.setHours(0, 0, 0, 0);
+        start.setUTCHours(0, 0, 0, 0);
         
         end = new Date(options.endDate);
-        end.setHours(23, 59, 59, 999);
+        end.setUTCHours(23, 59, 59, 999);
         
         const diffMs = end.getTime() - start.getTime() + 1;
         prevStart.setTime(start.getTime() - diffMs);
         prevEnd.setTime(end.getTime() - diffMs);
       } else {
-        // Fallback to last 30 days if custom range is invalid/incomplete
-        start.setDate(start.getDate() - 29);
+        start.setUTCDate(start.getUTCDate() - 29);
         const dayLength = 30 * 24 * 60 * 60 * 1000;
         prevStart.setTime(start.getTime() - dayLength);
         prevEnd.setTime(end.getTime() - dayLength);
@@ -169,8 +169,7 @@ export function getDateRange(
       break;
     }
     default: {
-      // Default: Last 30 Days
-      start.setDate(start.getDate() - 29);
+      start.setUTCDate(start.getUTCDate() - 29);
       const dayLength = 30 * 24 * 60 * 60 * 1000;
       prevStart.setTime(start.getTime() - dayLength);
       prevEnd.setTime(end.getTime() - dayLength);
@@ -178,5 +177,11 @@ export function getDateRange(
     }
   }
 
-  return { start, end, prevStart, prevEnd };
+  // Convert all computed bounds in target timezone back to true UTC Date objects for MongoDB queries
+  const startUTC = new Date(start.getTime() - offsetMinutes * 60000);
+  const endUTC = new Date(end.getTime() - offsetMinutes * 60000);
+  const prevStartUTC = new Date(prevStart.getTime() - offsetMinutes * 60000);
+  const prevEndUTC = new Date(prevEnd.getTime() - offsetMinutes * 60000);
+
+  return { start: startUTC, end: endUTC, prevStart: prevStartUTC, prevEnd: prevEndUTC };
 }
