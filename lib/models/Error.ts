@@ -8,7 +8,7 @@ export interface IError extends Document {
   url: string;
   message: string;
   stack: string;
-  type: "error" | "unhandledrejection";
+  type: "error" | "unhandledrejection" | "network_error";
   timestamp: Date;
 }
 
@@ -44,7 +44,7 @@ const ErrorSchema = new Schema<IError>(
     },
     type: {
       type: String,
-      enum: ["error", "unhandledrejection"],
+      enum: ["error", "unhandledrejection", "network_error"],
       default: "error",
       index: true,
     },

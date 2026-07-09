@@ -4,6 +4,7 @@ export interface IWebsite extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
   domain: string;
+  healthCheckUrl?: string;
   apiKey: string;
   status: "active" | "inactive";
   owner: mongoose.Types.ObjectId;
@@ -23,6 +24,11 @@ const WebsiteSchema = new Schema<IWebsite>(
       required: [true, "Domain là bắt buộc"],
       trim: true,
       lowercase: true,
+    },
+    healthCheckUrl: {
+      type: String,
+      trim: true,
+      default: "",
     },
     apiKey: {
       type: String,

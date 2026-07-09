@@ -27,7 +27,7 @@ export async function PUT(
       return error("Không có quyền chỉnh sửa website này", 403);
     }
 
-    const { name, domain, status } = await request.json();
+    const { name, domain, status, healthCheckUrl } = await request.json();
 
     if (name) website.name = name;
     if (domain) {
@@ -38,6 +38,9 @@ export async function PUT(
     }
     if (status && ["active", "inactive"].includes(status)) {
       website.status = status;
+    }
+    if (typeof healthCheckUrl === "string") {
+      website.healthCheckUrl = healthCheckUrl.trim();
     }
 
     await website.save();

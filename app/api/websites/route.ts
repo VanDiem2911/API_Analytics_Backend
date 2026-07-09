@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request);
     await connectDB();
 
-    const { name, domain } = await request.json();
+    const { name, domain, healthCheckUrl } = await request.json();
     if (!name || !domain) {
       return error("Tên website và domain là bắt buộc");
     }
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
     const website = await Website.create({
       name,
       domain: cleanDomain,
+      healthCheckUrl: typeof healthCheckUrl === "string" ? healthCheckUrl.trim() : "",
       apiKey,
       status: "active",
       owner: user._id,
