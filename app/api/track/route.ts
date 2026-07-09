@@ -55,18 +55,74 @@ function getCountryAndCity(request: NextRequest): { country: string; city: strin
   };
 }
 
+function getDomainHostname(urlOrHost: string | null): string {
+  if (!urlOrHost) return "";
+  try {
+    let urlString = urlOrHost;
+    if (!urlString.startsWith("http://") && !urlString.startsWith("https://")) {
+      urlString = "https://" + urlString;
+    }
+    const url = new URL(urlString);
+    return url.hostname.replace(/^www\./, "").toLowerCase();
+  } catch (e) {
+    return "";
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
     const body = await request.json();
     const { apiKey, type, visitorId, sessionId, data } = body;
 
-    if (!apiKey) return error("API Key là bắt buộc");
     if (!type || !visitorId || !sessionId) return error("Dữ liệu không đầy đủ");
 
-    // Authenticate the website API Key
-    const website = await Website.findOne({ apiKey, status: "active" });
-    if (!website) return error("API Key không hợp lệ hoặc website đã bị vô hiệu hóa", 401);
+    // Extract incoming origin or referer
+    const origin = request.headers.get("origin");
+    const referer = request.headers.get("referer");
+    const incomingHost = getDomainHostname(origin) || getDomainHostname(referer);
+
+    let website;
+
+    if (apiKey) {
+      // 1. Authenticate using API Key
+      website = await Website.findOne({ apiKey, status: "active" });
+      if (!website) {
+        return error("API Key không hợp lệ hoặc website đã bị vô hiệu hóa", 401);
+      }
+
+      // Check if incoming host matches the website's registered domain
+      const targetHost = website.domain.toLowerCase().replace(/^www\./, "");
+      const isLocalhost = (origin && origin.includes("localhost")) || (referer && referer.includes("localhost"));
+      
+      if (incomingHost && incomingHost !== targetHost && !incomingHost.endsWith("." + targetHost) && !isLocalhost) {
+        return error("Domain gửi yêu cầu không khớp với domain đã đăng ký cho API Key này", 403);
+      }
+    } else {
+      // 2. Domain-Only Tracking Mode (No API Key)
+      if (!incomingHost) {
+        return error("Không xác định được nguồn gốc yêu cầu (HTTP Origin/Referer thiếu)", 400);
+      }
+
+      // Allow localhost debugging
+      const isLocalhost = incomingHost === "localhost" || incomingHost === "127.0.0.1";
+      if (isLocalhost) {
+        website = await Website.findOne({ status: "active" });
+      } else {
+        website = await Website.findOne({ domain: incomingHost, status: "active" });
+        if (!website) {
+          const activeWebsites = await Website.find({ status: "active" });
+          website = activeWebsites.find((web: any) => {
+            const registeredDomain = web.domain.toLowerCase().replace(/^www\./, "");
+            return incomingHost === registeredDomain || incomingHost.endsWith("." + registeredDomain);
+          });
+        }
+      }
+
+      if (!website) {
+        return error(`Tên miền '${incomingHost}' chưa được đăng ký trong hệ thống`, 403);
+      }
+    }
 
     const websiteId = website._id;
 
