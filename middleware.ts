@@ -11,7 +11,13 @@ export function middleware(request: NextRequest) {
   if (path.startsWith("/api/track")) {
     response.headers.set("Access-Control-Allow-Origin", origin || "*");
   } else {
-    const isAllowed = origin === allowedOrigin || origin.includes("localhost") || origin.includes("127.0.0.1") || !origin;
+    const isAllowed =
+      origin === allowedOrigin ||
+      origin.includes("localhost") ||
+      origin.includes("127.0.0.1") ||
+      origin.endsWith(".vercel.app") ||
+      !origin;
+
     if (isAllowed) {
       response.headers.set("Access-Control-Allow-Origin", origin);
     } else {
