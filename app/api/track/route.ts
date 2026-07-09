@@ -108,14 +108,24 @@ export async function POST(request: NextRequest) {
       const isLocalhost = incomingHost === "localhost" || incomingHost === "127.0.0.1";
       if (isLocalhost) {
         website = await Website.findOne({ status: "active" });
-      } else {
-        website = await Website.findOne({ domain: incomingHost, status: "active" });
         if (!website) {
-          const activeWebsites = await Website.find({ status: "active" });
-          website = activeWebsites.find((web: any) => {
+          const anyWeb = await Website.findOne();
+          if (anyWeb && anyWeb.status === "inactive") {
+            return error("Website đã bị vô hiệu hóa", 401);
+          }
+        }
+      } else {
+        website = await Website.findOne({ domain: incomingHost });
+        if (!website) {
+          const allWebsites = await Website.find();
+          website = allWebsites.find((web: any) => {
             const registeredDomain = web.domain.toLowerCase().replace(/^www\./, "");
             return incomingHost === registeredDomain || incomingHost.endsWith("." + registeredDomain);
           });
+        }
+
+        if (website && website.status === "inactive") {
+          return error("Website đã bị vô hiệu hóa", 401);
         }
       }
 
