@@ -72,6 +72,79 @@ async function validatePublicUrl(value: string): Promise<URL> {
   return url;
 }
 
+function describeHttpHealth(statusCode: number, configured: boolean) {
+  const targetName = configured ? "Backend" : "Website";
+
+  if (statusCode >= 200 && statusCode < 400) {
+    return {
+      status: "online" as const,
+      message: `${targetName} đang phản hồi bình thường`,
+    };
+  }
+
+  if (statusCode === 401 || statusCode === 403) {
+    return {
+      status: "online" as const,
+      message: `${targetName} có phản hồi nhưng endpoint đang yêu cầu đăng nhập/quyền truy cập (HTTP ${statusCode}). Nếu muốn kiểm tra chuẩn hơn, hãy dùng URL /health công khai.`,
+    };
+  }
+
+  if (statusCode === 404) {
+    return {
+      status: "offline" as const,
+      message: `Không tìm thấy endpoint kiểm tra ${configured ? "backend" : "website"} (404). Kiểm tra lại URL health check, ví dụ /health hoặc /api/health.`,
+    };
+  }
+
+  if (statusCode >= 400 && statusCode < 500) {
+    return {
+      status: "offline" as const,
+      message: `${targetName} có phản hồi nhưng từ chối yêu cầu kiểm tra (HTTP ${statusCode}). Kiểm tra lại URL health check hoặc quyền truy cập.`,
+    };
+  }
+
+  if (statusCode >= 500) {
+    return {
+      status: "offline" as const,
+      message: `${targetName} đang lỗi phía máy chủ (HTTP ${statusCode}). Mở log backend để xem lỗi chi tiết.`,
+    };
+  }
+
+  return {
+    status: "offline" as const,
+    message: `${targetName} phản hồi không hợp lệ (HTTP ${statusCode}). Kiểm tra lại cấu hình health check.`,
+  };
+}
+
+function describeConnectionFailure(fetchError: unknown, configured: boolean) {
+  const targetName = configured ? "backend" : "website";
+  const code =
+    (fetchError as { cause?: { code?: string }; code?: string })?.cause?.code ||
+    (fetchError as { code?: string })?.code;
+
+  if (fetchError instanceof Error && fetchError.name === "AbortError") {
+    return `Không thể kết nối ${targetName}: máy chủ không phản hồi sau 8 giây. Có thể service đang sleep hoặc đã tắt.`;
+  }
+
+  if (code === "ENOTFOUND") {
+    return `Không thể kết nối ${targetName}: không tìm thấy domain. Kiểm tra lại URL health check.`;
+  }
+
+  if (code === "ECONNREFUSED") {
+    return `Không thể kết nối ${targetName}: máy chủ từ chối kết nối. Backend có thể đang tắt hoặc chưa mở cổng public.`;
+  }
+
+  if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
+    return `Không thể kết nối ${targetName}: kết nối bị quá thời gian. Backend có thể đang ngủ, quá tải hoặc mạng không ổn định.`;
+  }
+
+  if (code === "CERT_HAS_EXPIRED" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
+    return `Không thể kết nối ${targetName}: chứng chỉ HTTPS không hợp lệ. Kiểm tra lại SSL/domain.`;
+  }
+
+  return `Không thể kết nối ${targetName}. Có thể backend đã tắt, sai domain hoặc máy chủ đang gặp lỗi mạng.`;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -104,21 +177,20 @@ export async function GET(
         },
       });
 
+      const configured = Boolean(configuredUrl);
+      const health = describeHttpHealth(response.status, configured);
+
       return success({
-        status: response.status < 500 ? "online" : "offline",
+        status: health.status,
         statusCode: response.status,
         latencyMs: Date.now() - startedAt,
         checkedAt: new Date().toISOString(),
         url: target.toString(),
-        configured: Boolean(configuredUrl),
-        message:
-          response.status < 500
-            ? "Website đang phản hồi"
-            : `Máy chủ trả về HTTP ${response.status}`,
+        configured,
+        message: health.message,
       });
     } catch (fetchError) {
-      const timedOut =
-        fetchError instanceof Error && fetchError.name === "AbortError";
+      const configured = Boolean(configuredUrl);
 
       return success({
         status: "offline",
@@ -126,10 +198,8 @@ export async function GET(
         latencyMs: Date.now() - startedAt,
         checkedAt: new Date().toISOString(),
         url: target.toString(),
-        configured: Boolean(configuredUrl),
-        message: timedOut
-          ? "Không phản hồi sau 8 giây"
-          : "Không thể kết nối tới website",
+        configured,
+        message: describeConnectionFailure(fetchError, configured),
       });
     } finally {
       clearTimeout(timeout);
